@@ -1,0 +1,154 @@
+1. ACF AND PACF PLOTS
+# from statsmodels.tsa.stattools import adfuller
+# print(adfuller(diff1))
+
+# from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
+# import matplotlib.pyplot as plt
+
+# log_diff = np.log(data['Price']).diff().dropna()
+
+# plt.figure(figsize=(10,4))
+# plot_acf(log_diff, lags=60, ax=plt.gca()); plt.title('ACF of log-differenced')
+# plt.show()
+
+# plt.figure(figsize=(10,4))
+# plot_pacf(log_diff, lags=60, ax=plt.gca(), method='ywm'); plt.title('PACF of log-differenced')
+# plt.show()
+
+2. BUILDING THE ARIMA MODEL 
+from statsmodels.tsa.arima.model import ARIMA
+
+
+# model = ARIMA(log_values, order=(1,1,1))
+# model_fit = model.fit()
+# print(model_fit.summary())
+
+# forecast_log = model_fit.forecast(steps=30)
+# forecast = np.exp(forecast_log)
+# print(forecast)
+
+# plt.figure(figsize=(12,5))
+# plt.plot(data['Price'], label="Original")
+# plt.plot(forecast.index, label="Forecast")
+# plt.legend()
+# plt.show()
+
+3. Fix the TIME SERIES  
+# --- Ensure we have a proper Series with DatetimeIndex and a freq ---
+# Use the Date column as index (if not already)
+series = data.set_index('Date')['Price'].sort_index()
+
+# If the index has no freq, make it regular (daily) by reindexing/resampling.
+# Use asfreq if the data is already daily but missing .freq; otherwise resample + interpolate.
+if series.index.freq is None:
+    # create a full daily index from min to max
+    full_idx = pd.date_range(start=series.index.min(), end=series.index.max(), freq='D')
+    series = series.reindex(full_idx)            # introduce NaNs where days missing
+    series = series.interpolate(method='time')   # fill missing days
+    series.index.name = 'Date'
+
+# now series should be a proper daily-indexed Series with freq='D'
+print("Series index freq:", series.index.freq)
+
+4. Fit the ARIMA MODEL
+# --- Fit ARIMA (keep the order you already used, e.g. (1,1,1)) ---
+from statsmodels.tsa.arima.model import ARIMA
+model = ARIMA(series, order=(1, 1, 0))   # change order if you want
+model_fit = model.fit()
+print(model_fit.summary())
+
+5. FORECAST For next N days
+# --- Forecast for the next n days and attach correct datetime index ---
+n_forecast = 300
+pred = model_fit.get_forecast(steps=n_forecast)
+pred_mean = pred.predicted_mean
+pred_ci = pred.conf_int()
+
+# Build a future daily index starting the day after the last observed date
+start_date = series.index[-1] + pd.Timedelta(days=1)
+future_index = pd.date_range(start=start_date, periods=n_forecast, freq='D')
+
+# Convert to Series/DataFrame with the proper index
+pred_mean = pd.Series(pred_mean, index=future_index, name='predicted_mean')
+pred_ci.index = future_index
+
+# --- Plot observed + forecast with CI ---
+import matplotlib.pyplot as plt
+
+plt.figure(figsize=(12,5))
+plt.plot(series, label='Original')
+plt.plot(pred_mean, label='Forecast', color='orange')
+plt.fill_between(future_index,
+                 pred_ci.iloc[:, 0],
+                 pred_ci.iloc[:, 1],
+                 color='orange', alpha=0.2)
+plt.legend()
+plt.xlabel('Date')
+plt.ylabel('Price')
+plt.title('Original and Forecast (ARIMA(1,1,1))')
+plt.show()
+
+6. 
+train = series.iloc[:-300]   # last 60 days as test
+test  = series.iloc[-300:]
+
+model = ARIMA(train, order=(1,1,1))
+model_fit = model.fit()
+
+pred = model_fit.forecast(steps=len(test))
+pred.index = test.index   # align prediction with actual test dates
+
+plt.figure(figsize=(12,6))
+plt.plot(train, label="Train")
+plt.plot(test, label="Test", color='black')
+plt.plot(pred, label="Forecast", color='red')
+plt.legend()
+plt.show()
+
+
+# from pmdarima import auto_arima
+
+# AUTO ARIMA MODEL
+# model = auto_arima(
+#     series,               # your time-series
+#     start_p=0, max_p=5,   # AR terms
+#     start_q=0, max_q=5,   # MA terms
+#     d=None,               # let model decide differencing
+#     start_P=0, max_P=3,   # seasonal AR
+#     start_Q=0, max_Q=3,   # seasonal MA
+#     D=None,               # let model decide seasonal differencing
+#     m=365,                # PERIOD = 365 if daily data & yearly seasonality
+#     seasonal=True,        # enable SARIMA
+#     trace=True,           # to print the search process
+#     error_action='ignore',
+#     suppress_warnings=True,
+#     stepwise=True
+# )
+
+# print(model.summary())
+
+# n_periods = 365
+# forecast, conf_int = model.predict(n_periods=n_periods, return_conf_int=True)
+
+# # Create future index
+# future_dates = pd.date_range(start=series.index[-1], periods=n_periods+1, freq='D')[1:]
+
+# forecast_series = pd.Series(forecast, index=future_dates)
+
+# plt.figure(figsize=(12,6))
+# plt.plot(series, label="Actual Aluminium Price")
+# plt.plot(forecast_series, label="Forecast", color='red')
+# plt.fill_between(
+#     future_dates,
+#     conf_int[:,0],
+#     conf_int[:,1],
+#     color='pink',
+#     alpha=0.3
+# )
+
+# plt.title("Aluminium Price Forecast using Auto-ARIMA")
+# plt.xlabel("Date")
+# plt.ylabel("Price")
+# plt.legend()
+# plt.show()
+
